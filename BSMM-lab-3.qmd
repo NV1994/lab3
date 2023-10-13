@@ -1,8 +1,8 @@
 ---
 title: "BSMM-lab-3"
 subtitle: "BSMM 8740 Fall 2023"
-author: "Add your name here"
-date: "Add the date here"
+author: "Nisha Verma 110110492"
+date: "October 13, 2023"
 format: html
 editor: visual
 self-contained: true
@@ -21,28 +21,211 @@ boston_cocktails <- readr::read_csv('data/boston_cocktails.csv')
 
 ### Exercise 1
 
-The median measure amount across across all cocktails is \_\_\_.
+The median measure amount across across all cocktails is 1.
+
+```{r}
+library(magrittr)   # Provides the pipe
+library(tidyverse)  # Used for data wrangling + visualization
+library(tidymodels) # Used for modeling
+library(gt)         # Used for pretty tables
+# Use introduce to provide an overview of the "boston_cocktails" dataset 
+DataExplorer::introduce(boston_cocktails)
+# Calculate and store the median of the variable 'measure_number'
+median_measure_number <- median(boston_cocktails$measure_number)
+print(median_measure_number)
+```
 
 ### Exercise 2
 
-The **Leap Frog Highball** contains \_\_\_ of gin
+The **Leap Frog Highball** contains 2 of gin
+
+```{r}
+# Load the 'tidyverse' package for data manipulation
+library(tidyverse)
+#install.packages("janitor")
+library(janitor)
+# Select specific columns from the 'boston_cocktails' dataset
+select_columns <- boston_cocktails |>
+  select(name, category, ingredient, measure_number)
+# Pivot the table in order to create columns for each ingredient
+pivoted_table <- select_columns |>
+  pivot_wider(names_from = ingredient, values_from = measure_number, values_fill = 0)
+# Clean the column names
+cleaned_table <- pivoted_table |>
+  janitor::clean_names()
+# Find the amount of gin in the 'Leap Frog Highball'
+gin_in_leap_frog_highball <- cleaned_table |>
+  filter(name == "Leap Frog Highball") |>
+  select(gin)
+# Print the amount of gin in the 'Leap Frog Highball'
+print(gin_in_leap_frog_highball)
+```
 
 ### Exercise 3
 
-\_\_\_ predictor variables are prepped by the recipe.
+0 predictor variables are prepped by the recipe.
+
+```{r}
+# Load the 'recipes' package for data preprocessing
+library(recipes)
+#View(boston_cocktails)
+# Create a recipe object using the loaded dataset
+recipe_obj <- recipe(~ ., data = boston_cocktails) |>
+  update_role(name, category, new_role = "id") |>
+  step_dummy(all_nominal()) |>
+  step_normalize(all_numeric()) |>
+  step_pca(all_numeric(), num_comp = 5)
+# Prepare the data using the recipe
+prepped_data <- prep(recipe_obj)
+# Count the number of predictor variables after preprocessing
+num_predictor_vars <- length(prepped_data$predictors)
+# Count the number of predictor variables after preprocessing
+print(num_predictor_vars)
+```
 
 ### Exercise 4
 
-On average the most used ingredient in the Boston Cocktails dataset is \_\_\_\_.
+On average the most used ingredient in the Boston Cocktails dataset is cranberry juice.
+
+```{r}
+# Summarize the data to identify the most frequently used ingredient on average
+ingredient_summary <- boston_cocktails |>
+  group_by(ingredient) |>
+  summarize(avg_measure_number = mean(measure_number, na.rm = TRUE)) |>
+  arrange(desc(avg_measure_number))
+# Identify the most used ingredient
+most_used_ingredient <- ingredient_summary$ingredient[1]
+# Identify the most used ingredient
+print(most_used_ingredient )
+```
 
 ### Exercise 5
 
 Describe describe the drinks represented by PC1?
 
+For row_id values between 0 and 0.25, they exhibit a favorable influence on higher PC1 scores due to their positive loading in PC1.
+
+In the case of measure_number, when it ranges from 0 to -0.7, it contributes negatively to higher PC1 values as it carries a negative loading in PC1.
+
+Similarly, for ingredient_number values between 0 and 0.7, they positively impact higher PC1 scores owing to their positive loading in PC1.
+
+```{r}
+# Load necessary libraries for data preprocessing and visualization
+library(recipes)
+library(dplyr)
+library(forcats)
+library(ggplot2)
+# Select numeric columns from the dataset
+numeric_columns <- select_if(boston_cocktails, is.numeric)
+boston_cocktails_recipe <-
+  recipe(~., data = numeric_columns) %>% 
+  update_role(., row_id, ingredient_number, measure_number) %>% 
+  step_naomit(all_predictors()) %>% 
+  step_normalize(all_predictors()) %>%
+  step_pca(all_predictors(), id = "pca") %>% 
+  prep()
+# Select numeric columns from the dataset
+boston_cocktails_pca <- 
+  boston_cocktails_recipe %>% 
+  tidy(id = "pca", matrix = "X") # Use matrix = "X" to keep the original data
+# Select numeric columns from the dataset
+boston_cocktails_pca_filtered <- boston_cocktails_pca %>%
+  filter(component %in% c("PC1", "PC2", "PC3", "PC4", "PC5")) %>%
+  mutate(component = fct_inorder(component))
+# Create a PCA plot
+ggplot(boston_cocktails_pca_filtered, aes(x = value, y = terms, fill = terms)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~component, nrow = 1) +
+  labs(y = NULL) +
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 14, face = "bold"))
+```
+
 ### Exercise 6
 
-The characteristic alcoholic beverage of each of the first 4 principle components is \_\_\_.
+The characteristic alcoholic beverage of each of the first 4 principle components is less than or equal to 0.
+
+```{r}
+# Load dplyr and gt libraries
+library(dplyr)
+library(gt)
+# Define a function to determine cell colors based on value
+color_cells <- function(x) {
+  ifelse(x < 0, "red", "green")
+}
+# Extract the top 8 ingredients by component based on absolute value
+top_ingredients_table <- boston_cocktails_pca_filtered %>%
+  filter(component %in% c("PC1", "PC2", "PC3", "PC4","PC5")) %>%
+  group_by(component) %>%
+  slice_max(order_by = abs(value), n = 8) %>%
+  ungroup() %>%
+  pivot_wider(names_from = component, values_from = terms)
+# Add cell background colors using gt
+for (col in names(top_ingredients_table)[-1]) {
+  top_ingredients_table[[col]] <- sapply(top_ingredients_table[[col]], function(x) {
+    cell_style <- color_cells(x)
+    sprintf('%s', cell_style, x)
+  })
+}
+# Create the gt table
+table_pca_ingredients <- top_ingredients_table %>%
+  gt() %>%
+  tab_style(
+    style = cell_fill(
+      color = color_cells(0)
+    ),
+    locations = cells_body()
+  )
+# Print the table
+table_pca_ingredients
+```
 
 ### Exercise 7
 
 How would you interpret the results of a PCA analysis for a client?
+
+In this PCA examination, PC1 and PC2 do not effectively segregate data points, indicating a potentially intricate or low-variance structure within the dataset. It might be necessary to delve into higher-dimensional components for a deeper understanding of any concealed patterns.
+
+```{r}
+# Load necessary libraries for data manipulation and visualization
+library(dplyr)
+library(recipes)
+library(ggplot2)
+
+# Create a recipe for PCA
+recipe_pca <- recipe(~., data = boston_cocktails)
+
+# Apply normalization and PCA transformations
+pca_transformed <- recipe_pca %>%
+  step_normalize(all_numeric()) %>%
+  step_pca(all_numeric(), num_comp = 3)
+
+# Prepare PCA estimates
+pca_estimates <- prep(pca_transformed, training = boston_cocktails)
+
+# Apply PCA transformations to the dataset
+pca_data <- bake(pca_estimates, boston_cocktails)
+
+# Extend the range for the plot
+rng <- extendrange(c(pca_data$PC1, pca_data$PC2))
+
+# Create PCA with threshold
+with_threshold <- recipe_pca %>%
+  step_normalize(all_numeric()) %>%
+  step_pca(all_numeric(), threshold = 0.99)
+
+# Prepare with threshold
+with_threshold <- prep(with_threshold, training = boston_cocktails)
+baked_with_threshold <- bake(with_threshold, boston_cocktails)
+
+# Display tidy PCA results
+tidy(pca_transformed, number = 2)
+tidy(pca_estimates, number = 2)
+
+# Create a scatter plot of PC1 and PC2 with labels
+ggplot(pca_data, aes(PC1, PC2, label = name)) +
+  geom_point(aes(color = category), alpha = 0.7, size = 2) +
+  geom_text(check_overlap = TRUE, hjust = "inward") + 
+  labs(color = NULL)
+
+```
